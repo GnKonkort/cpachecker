@@ -11,7 +11,6 @@
     <includesfile>../programs/rcu/rcu-test.set</includesfile>
     <option name="-rcucpa"/>
     <option name="-skipRecursion"/>
-    <propertyfile>../programs/rcu/data-race.prp</propertyfile>
   </tasks> 
 
   <rundefinition>

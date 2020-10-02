@@ -51,6 +51,10 @@ import org.sosy_lab.cpachecker.cpa.lock.LockIdentifier;
 import org.sosy_lab.cpachecker.cpa.lock.LockTransferRelation;
 import org.sosy_lab.cpachecker.cpa.pointer2.PointerState;
 import org.sosy_lab.cpachecker.cpa.pointer2.PointerTransferRelation;
+import org.sosy_lab.cpachecker.cpa.thread.ThreadState;
+import org.sosy_lab.cpachecker.cpa.thread.ThreadState.ThreadStatus;
+//Importing information about threads in CFA
+import org.sosy_lab.cpachecker.cpa.thread.ThreadTransferRelation;
 import org.sosy_lab.cpachecker.exceptions.CPATransferException;
 import org.sosy_lab.cpachecker.util.CFATraversal;
 import org.sosy_lab.cpachecker.util.CFAUtils;
@@ -70,17 +74,21 @@ public class BlockPartitioningBuilder {
   protected final Map<CFANode, Set<FunctionEntryNode>> innerFunctionCallsMap = new HashMap<>();
   protected final Map<CFANode, Set<CFANode>> blockNodesMap = new HashMap<>();
   protected final Map<CFANode, Set<MemoryLocation>> knownMemoryLocations = new HashMap<>();
-
   protected final LockTransferRelation lTransfer;
   protected final PointerTransferRelation pTransfer;
+  protected final ThreadTransferRelation thTransfer;
 
+  /*
+   * public enum ThreadStatus { PARENT_THREAD, CREATED_THREAD, SELF_PARALLEL_THREAD; }
+   */
   public BlockPartitioningBuilder() {
-    this(null, null);
+    this(null, null,null);
   }
 
-  public BlockPartitioningBuilder(LockTransferRelation t, PointerTransferRelation p) {
+  public BlockPartitioningBuilder(LockTransferRelation t, PointerTransferRelation p, ThreadTransferRelation th) {
     lTransfer = t;
     pTransfer = p;
+    thTransfer = th;
   }
 
   public BlockPartitioning build(CFA cfa) {
@@ -92,6 +100,8 @@ public class BlockPartitioningBuilder {
     Map<FunctionEntryNode, Set<CFANode>> functions = new HashMap<>();
     Map<FunctionEntryNode, Set<ReferencedVariable>> referencedVariables = new HashMap<>();
     Map<FunctionEntryNode, Set<FunctionEntryNode>> innerFunctionCalls = new HashMap<>();
+    Map<FunctionEntryNode, Map<String, ThreadStatus>> innerThreads = new HashMap<>();
+
     for (FunctionEntryNode head : cfa.getAllFunctionHeads()) {
       final Set<CFANode> body = TRAVERSE_CFA_INSIDE_FUNCTION.collectNodesReachableFrom(head);
       functions.put(head, body);
@@ -99,6 +109,7 @@ public class BlockPartitioningBuilder {
       innerFunctionCalls.put(head, collectInnerFunctionCalls(body));
       locks.put(head, collectInnerLocks(body));
       knownMemoryLocations.put(head, collectMemoryLocations(body));
+      innerThreads.put(head, collectThreads(body));
     }
 
     // then get directly called functions and sum up all indirectly called functions
@@ -108,6 +119,8 @@ public class BlockPartitioningBuilder {
           collectInnerFunctionCalls(blockNodesMap.get(callNode)));
       blockFunctionCalls.put(callNode, calledFunctions);
     }
+
+
 
     //now we can create the Blocks   for the BlockPartitioning
     Collection<Block> blocks = new ArrayList<>();
@@ -120,6 +133,9 @@ public class BlockPartitioningBuilder {
       Collection<Iterable<LockIdentifier>> blockLocks = new ArrayList<>();
       Collection<Iterable<MemoryLocation>> blockMemory = new ArrayList<>();
       Set<CFANode> directNodes = blockNodesMap.get(callNode);
+      Map<String, ThreadStatus> threadsToAddInBlock = new HashMap<>();
+
+
       blockNodes.add(directNodes);
       variables.add(referencedVariablesMap.get(callNode));
       // TODO How it is possible to miss a key?
@@ -130,6 +146,7 @@ public class BlockPartitioningBuilder {
         variables.add(referencedVariables.get(calledFunction));
         blockLocks.add(locks.getOrDefault(calledFunction, ImmutableSet.of()));
         blockMemory.add(knownMemoryLocations.getOrDefault(calledFunction, ImmutableSet.of()));
+        threadsToAddInBlock.putAll(innerThreads.get(calledFunction));
       }
 
       blocks.add(
@@ -139,7 +156,9 @@ public class BlockPartitioningBuilder {
               returnNodesMap.get(callNode),
               Iterables.concat(blockNodes),
               Iterables.concat(blockLocks),
-              Iterables.concat(blockMemory)));
+              Iterables.concat(blockMemory),
+              threadsToAddInBlock)
+	  );
     }
 
     return new BlockPartitioning(blocks, cfa.getMainFunction());
@@ -225,6 +244,44 @@ public class BlockPartitioningBuilder {
     }
     return result;
   }
+  //modified, collecting info about threads
+
+
+  private Map<String, ThreadStatus> collectThreads(Set<CFANode> thNodes){
+     if(thTransfer == null){
+         return Collections.emptyMap();
+     }
+
+
+     Map<String, ThreadStatus> result = new HashMap<>();
+
+     // TODO: currently we are assuming that the only operation that can change thread's states is sthe CreateThread operation. Should be expanded to other operations
+
+     for(CFANode node : thNodes){
+         for(int i = 0; i < node.getNumLeavingEdges(); i++){
+             CFAEdge e = node.getLeavingEdge(i);
+             try {
+               for (AbstractState state : thTransfer.getAbstractSuccessorsForEdge(
+                   ThreadState.emptyState(),
+                   SingletonPrecision.getInstance(),
+                   e)) {
+                 result.putAll(((ThreadState) state).getThreadSet());
+               }
+             } catch (CPATransferException e1) {
+               // TODO Auto-generated catch block
+               e1.printStackTrace();
+             } catch (InterruptedException e1) {
+               // TODO Auto-generated catch block
+               e1.printStackTrace();
+                }
+         }
+     }
+     return result;
+  }
+
+
+  //end of modifications
+
 
   private Set<MemoryLocation> collectMemoryLocations(Set<CFANode> pNodes) {
     if (pTransfer == null) {

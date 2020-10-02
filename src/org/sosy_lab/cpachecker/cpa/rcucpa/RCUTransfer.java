@@ -31,7 +31,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
-import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.logging.Level;
@@ -47,6 +46,7 @@ import org.sosy_lab.common.log.LogManager;
 import org.sosy_lab.cpachecker.cfa.ast.c.CDeclaration;
 import org.sosy_lab.cpachecker.cfa.ast.c.CExpression;
 import org.sosy_lab.cpachecker.cfa.ast.c.CExpressionAssignmentStatement;
+import org.sosy_lab.cpachecker.cfa.ast.c.CFieldReference;
 import org.sosy_lab.cpachecker.cfa.ast.c.CFunctionCallAssignmentStatement;
 import org.sosy_lab.cpachecker.cfa.ast.c.CFunctionCallExpression;
 import org.sosy_lab.cpachecker.cfa.ast.c.CFunctionCallStatement;
@@ -54,7 +54,7 @@ import org.sosy_lab.cpachecker.cfa.ast.c.CFunctionDeclaration;
 import org.sosy_lab.cpachecker.cfa.ast.c.CInitializer;
 import org.sosy_lab.cpachecker.cfa.ast.c.CInitializerExpression;
 import org.sosy_lab.cpachecker.cfa.ast.c.CLeftHandSide;
-import org.sosy_lab.cpachecker.cfa.ast.c.CParameterDeclaration;
+import org.sosy_lab.cpachecker.cfa.ast.c.CPointerExpression;
 import org.sosy_lab.cpachecker.cfa.ast.c.CStatement;
 import org.sosy_lab.cpachecker.cfa.ast.c.CVariableDeclaration;
 import org.sosy_lab.cpachecker.cfa.model.CFAEdge;
@@ -137,19 +137,12 @@ public class RCUTransfer extends SingleEdgeTransferRelation{
 
   private final LogManager logger;
   private final Set<MemoryLocation> rcuPointers;
-  private final RCUStatistics stats;
 
   RCUTransfer(Configuration pConfig, LogManager pLogger)
       throws InvalidConfigurationException {
     logger = pLogger;
     pConfig.inject(this);
-    if (input != null) {
-      rcuPointers = parseFile(input);
-    } else {
-      logger.log(Level.WARNING, "RCU information is not given, analysis is useless");
-      rcuPointers = ImmutableSet.of();
-    }
-    stats = new RCUStatistics();
+    rcuPointers = parseFile(input);
   }
 
   private Set<MemoryLocation> parseFile(Path pInput) {
@@ -204,18 +197,7 @@ public class RCUTransfer extends SingleEdgeTransferRelation{
       case FunctionCallEdge:
         CFunctionCallExpression callExpression =
             ((CFunctionCallEdge) cfaEdge).getSummaryEdge().getExpression().getFunctionCallExpression();
-        List<CExpression> args = ((CFunctionCallEdge) cfaEdge).getArguments();
-        List<CParameterDeclaration> params =
-            ((CFunctionCallEdge) cfaEdge).getSuccessor().getFunctionParameters();
-        String callerName = cfaEdge.getPredecessor().getFunctionName();
-        result =
-            assignFunctionArguments(
-                result,
-                args,
-                params,
-                callerName,
-                cfaEdge.getSuccessor().getFunctionName());
-        result = handleFunctionCallStatement(callExpression, result, callerName);
+        result = handleFunctionCallStatement(callExpression, result, cfaEdge.getPredecessor().getFunctionName());
         break;
       case FunctionReturnEdge:
       case ReturnStatementEdge:
@@ -230,85 +212,47 @@ public class RCUTransfer extends SingleEdgeTransferRelation{
     return ImmutableSet.of(result);
   }
 
-  private RCUState assignFunctionArguments(
-      RCUState state,
-      List<CExpression> pArgs,
-      List<CParameterDeclaration> pParams,
-      String callerName,
-      String functionName) {
-
-    RCUState result = state;
-    IdentifierCreator callerCreator = new IdentifierCreator(callerName);
-    IdentifierCreator innerCreator = new IdentifierCreator(functionName);
-
-    // Iterate over parameters to avoid f(..)
-    for (int i = 0; i < pParams.size(); i++) {
-      CExpression arg = pArgs.get(i);
-      CParameterDeclaration param = pParams.get(i);
-
-      AbstractIdentifier argId = arg.accept(callerCreator);
-      AbstractIdentifier paramId = innerCreator.createIdentifier(param, 0);
-
-      if (argId.isPointer()) {
-        result = handleAssignment(paramId, argId, result, false);
-      }
-    }
-
-    return result;
-  }
-
   private RCUState handleAssignment(CExpression left, CExpression right,
                                     String functionName,
                                     RCUState state,
       boolean rcuAssign) {
-
     IdentifierCreator localIc = new IdentifierCreator(functionName);
-
-    AbstractIdentifier rcuPtr = left.accept(localIc);
-    AbstractIdentifier ptr = right.accept(localIc);
-
-    if (rcuPtr.isPointer() || ptr.isPointer()) {
-      // a = null is also possible
-      return handleAssignment(rcuPtr, ptr, state, rcuAssign);
-    }
-    return state;
-  }
-
-  private RCUState handleAssignment(
-      AbstractIdentifier left,
-      AbstractIdentifier right,
-      RCUState state,
-      boolean rcuAssign) {
-
+    AbstractIdentifier rcuPtr, ptr;
     RCUState result = state;
 
-    MemoryLocation rcuLoc = LocationIdentifierConverter.toLocation(left);
-    MemoryLocation loc = LocationIdentifierConverter.toLocation(right);
+    rcuPtr = left.accept(localIc);
+
+    ptr = right.accept(localIc);
+
+    MemoryLocation rcuLoc = LocationIdentifierConverter.toLocation(rcuPtr);
+    MemoryLocation loc = LocationIdentifierConverter.toLocation(ptr);
 
     if ((rcuLoc != null && rcuPointers.contains(rcuLoc))
         || (loc != null && rcuPointers.contains(loc))) {
 
-      AbstractIdentifier nonTemporaryId = result.getNonTemporaryId(left);
-      AbstractIdentifier leftPtr = left;
+      AbstractIdentifier nonTemporaryId = result.getNonTemporaryId(rcuPtr);
+      AbstractIdentifier leftPtr = rcuPtr;
       if (nonTemporaryId != null) {
         leftPtr = nonTemporaryId;
       }
-      nonTemporaryId = result.getNonTemporaryId(left);
-      AbstractIdentifier rightPtr = right;
+      nonTemporaryId = result.getNonTemporaryId(rcuPtr);
+      AbstractIdentifier rightPtr = ptr;
       if (nonTemporaryId != null) {
         rightPtr = nonTemporaryId;
       }
 
-      result = addTmpMappingIfNecessary(left, right, result);
-      result = addTmpMappingIfNecessary(right, left, result);
+      result = addTmpMappingIfNecessary(rcuPtr, ptr, result);
+      result = addTmpMappingIfNecessary(ptr, rcuPtr, result);
 
-      result = result.addToRelations(leftPtr, rightPtr);
       if (rcuAssign) {
         result = result.addToOutdated(leftPtr);
+      }
+      result = result.addToRelations(leftPtr, rightPtr);
+      if (rcuAssign) {
         result = result.addToRelations(rightPtr, leftPtr);
       }
-      if (!leftPtr.equals(left)) {
-        result = result.addToRelations(left, rightPtr);
+      if (!leftPtr.equals(rcuPtr)) {
+        result = result.addToRelations(rcuPtr, rightPtr);
       }
 
     }
@@ -346,10 +290,8 @@ public class RCUTransfer extends SingleEdgeTransferRelation{
       } else if (fName.equals(fictReadUnlock) || fName.equals(fictWriteUnlock)) {
         result = result.clearLock();
       } else if (fName.equals(sync)) {
-        stats.synchNum.inc();
         result = result.fillLocal();
       } else if (fName.equals(assign)) {
-        stats.assignNum.inc();
         CExpression rcuPtr = pCallExpression.getParameterExpressions().get(0);
         CExpression ptr = pCallExpression.getParameterExpressions().get(1);
 
@@ -366,7 +308,6 @@ public class RCUTransfer extends SingleEdgeTransferRelation{
     // This case is covered by the normal assignment expression
     CFunctionDeclaration functionDeclaration = assignment.getFunctionCallExpression().getDeclaration();
     if (functionDeclaration != null && functionDeclaration.getName().equals(deref)) {
-      stats.derefNum.inc();
       return handleAssignment(assignment.getLeftHandSide(), assignment.getFunctionCallExpression()
           .getParameterExpressions()
           .get(0), functionName, pResult, false);
@@ -379,16 +320,21 @@ public class RCUTransfer extends SingleEdgeTransferRelation{
                                          String functionName) {
     CLeftHandSide leftHandSide = assignment.getLeftHandSide();
     CExpression rightHandSide = assignment.getRightHandSide();
-
-    return handleAssignment(leftHandSide, rightHandSide, functionName, pResult, false);
+    if (leftHandSide instanceof CPointerExpression || leftHandSide instanceof CFieldReference ||
+        rightHandSide instanceof CPointerExpression || rightHandSide instanceof CFieldReference) {
+      return handleAssignment(leftHandSide, rightHandSide, functionName,
+          pResult,
+          false);
+    }
+    return pResult;
   }
 
   private RCUState handleDeclaration(CDeclaration pDeclaration,
                                  RCUState pResult,
                                  String pFunctionName) {
+    IdentifierCreator localIc = new IdentifierCreator(pFunctionName);
 
     if (pDeclaration != null && pDeclaration instanceof CVariableDeclaration) {
-      IdentifierCreator localIc = new IdentifierCreator(pFunctionName);
       CVariableDeclaration var = (CVariableDeclaration) pDeclaration;
       AbstractIdentifier ail = localIc.createIdentifier(var, 0);
 
@@ -407,7 +353,4 @@ public class RCUTransfer extends SingleEdgeTransferRelation{
     return pResult;
   }
 
-  RCUStatistics getStatistics() {
-    return stats;
-  }
 }

@@ -53,7 +53,7 @@ public class RCUState implements LatticeAbstractState<RCUState>,
     CompatibleNode, LocalInfoProvider, AliasInfoProvider {
   private final ImmutableMultimap<AbstractIdentifier, AbstractIdentifier> rcuRelations;
   private final ImmutableSet<AbstractIdentifier> outdatedRCU;
-  private final ImmutableSet<GeneralIdentifier> localAgain;
+  private final ImmutableSet<AbstractIdentifier> localAgain;
   private final LockStateRCU lockState;
   private final ImmutableMap<AbstractIdentifier, AbstractIdentifier> temporaryIds;
 
@@ -61,7 +61,7 @@ public class RCUState implements LatticeAbstractState<RCUState>,
       LockStateRCU pLockState,
       ImmutableMultimap<AbstractIdentifier, AbstractIdentifier> pRcuRel,
       ImmutableSet<AbstractIdentifier> pOutdatedRCU,
-      ImmutableSet<GeneralIdentifier> pLocalAgain,
+      ImmutableSet<AbstractIdentifier> pLocalAgain,
       ImmutableMap<AbstractIdentifier, AbstractIdentifier> pTmpMapping) {
     lockState = pLockState;
     rcuRelations = pRcuRel;
@@ -88,7 +88,7 @@ public class RCUState implements LatticeAbstractState<RCUState>,
     Set<AbstractIdentifier> newOutdated = new TreeSet<>(this.outdatedRCU);
     newOutdated.addAll(other.outdatedRCU);
 
-    Set<GeneralIdentifier> newLocal = new TreeSet<>(this.localAgain);
+    Set<AbstractIdentifier> newLocal = new TreeSet<>(this.localAgain);
     newLocal.addAll(other.localAgain);
 
     Map<AbstractIdentifier, AbstractIdentifier> newTmp = new TreeMap<>(this.temporaryIds);
@@ -127,17 +127,11 @@ public class RCUState implements LatticeAbstractState<RCUState>,
   }
 
   RCUState fillLocal() {
-    ImmutableSet<GeneralIdentifier> local =
-        FluentIterable
-            .concat(
-                from(outdatedRCU).filter(SingleIdentifier.class)
-                    .transform(SingleIdentifier::getGeneralId),
-                localAgain)
-            .toSet();
-
+    Set<AbstractIdentifier> local = new TreeSet<>(localAgain);
+    local.addAll(outdatedRCU);
     return new RCUState(lockState, rcuRelations,
         ImmutableSet.of(),
-        local,
+        ImmutableSet.copyOf(local),
         temporaryIds);
   }
 
@@ -186,43 +180,43 @@ public class RCUState implements LatticeAbstractState<RCUState>,
     }
     res = rcuRelations.size() - other.rcuRelations.size();
     if (res != 0) {
-      if (rcuRelations.entries().containsAll(other.rcuRelations.entries())) {
-        return 1;
-      }
-      if (other.rcuRelations.entries().containsAll(rcuRelations.entries())) {
-        return -1;
-      }
       return res;
+    }
+    if (rcuRelations.entries().containsAll(other.rcuRelations.entries())) {
+      return 1;
+    }
+    if (other.rcuRelations.entries().containsAll(rcuRelations.entries())) {
+      return -1;
     }
     res = outdatedRCU.size() - other.outdatedRCU.size();
     if (res != 0) {
-      if (outdatedRCU.containsAll(other.outdatedRCU)) {
-        return 1;
-      }
-      if (other.outdatedRCU.containsAll(outdatedRCU)) {
-        return -1;
-      }
       return res;
+    }
+    if (outdatedRCU.containsAll(other.outdatedRCU)) {
+      return 1;
+    }
+    if (other.outdatedRCU.containsAll(outdatedRCU)) {
+      return -1;
     }
     res = localAgain.size() - other.localAgain.size();
     if (res != 0) {
-      if (localAgain.containsAll(other.localAgain)) {
-        return 1;
-      }
-      if (other.localAgain.containsAll(localAgain)) {
-        return -1;
-      }
       return res;
+    }
+    if (localAgain.containsAll(other.localAgain)) {
+      return 1;
+    }
+    if (other.localAgain.containsAll(localAgain)) {
+      return -1;
     }
     res = temporaryIds.size() - other.temporaryIds.size();
     if (res != 0) {
-      if (temporaryIds.entrySet().containsAll(other.temporaryIds.entrySet())) {
-        return 1;
-      }
-      if (other.temporaryIds.entrySet().containsAll(temporaryIds.entrySet())) {
-        return -1;
-      }
       return res;
+    }
+    if (temporaryIds.entrySet().containsAll(other.temporaryIds.entrySet())) {
+      return 1;
+    }
+    if (other.temporaryIds.entrySet().containsAll(temporaryIds.entrySet())) {
+      return -1;
     }
     // TODO: No ideas
     return toString().compareTo(other.toString());
@@ -256,11 +250,10 @@ public class RCUState implements LatticeAbstractState<RCUState>,
   @Override
   public boolean isLocal(GeneralIdentifier id) {
     if (!localAgain.isEmpty()) {
-      for (int i = 0; i <= id.getDereference(); i++) {
-        GeneralIdentifier gId = (GeneralIdentifier) id.cloneWithDereference(i);
-        if (localAgain.contains(gId)) {
-          return true;
-        }
+      FluentIterable<GeneralIdentifier> genIds =
+          from(localAgain).filter(SingleIdentifier.class).transform(SingleIdentifier::getGeneralId);
+      if (genIds.anyMatch(i -> i.equals(id))) {
+        return true;
       }
     }
     return false;
@@ -296,38 +289,26 @@ public class RCUState implements LatticeAbstractState<RCUState>,
   public Collection<AbstractIdentifier> getAllPossibleAliases(AbstractIdentifier id) {
     Set<AbstractIdentifier> result = new TreeSet<>();
 
-    addAliasesFor(id, result);
-
-    return result;
-  }
-
-  private void addAliasesFor(AbstractIdentifier id, Collection<AbstractIdentifier> result) {
-    if (id.getDereference() > 0) {
-      for (int i = 0; i <= id.getDereference(); ++i) {
-        AbstractIdentifier clone = id.cloneWithDereference(i);
-        if (rcuRelations.containsKey(clone)) {
-          for (AbstractIdentifier alias : rcuRelations.get(clone)) {
-            AbstractIdentifier clonnedAlias =
-                alias.cloneWithDereference(alias.getDereference() + id.getDereference() - i);
-            if (result.add(clonnedAlias)) {
-              addAliasesFor(clonnedAlias, result);
-            }
+    if (id instanceof SingleIdentifier) {
+      SingleIdentifier sid = (SingleIdentifier) id;
+      if (sid.getDereference() > 0) {
+        for (int i = 0; i <= sid.getDereference(); ++i) {
+          AbstractIdentifier clone = sid.cloneWithDereference(i);
+          if (rcuRelations.containsKey(clone)) {
+            result.addAll(rcuRelations.get(clone));
           }
-        }
-        if (rcuRelations.containsValue(clone)) {
-          for (Entry<AbstractIdentifier, AbstractIdentifier> entry : rcuRelations.entries()) {
-            if (entry.getValue().equals(clone)) {
-              AbstractIdentifier alias = entry.getKey();
-              AbstractIdentifier clonnedAlias =
-                  alias.cloneWithDereference(alias.getDereference() + id.getDereference() - i);
-              if (result.add(clonnedAlias)) {
-                addAliasesFor(clonnedAlias, result);
+          if (rcuRelations.containsValue(clone)) {
+            for (Entry<AbstractIdentifier, AbstractIdentifier> entry : rcuRelations.entries()) {
+              if (entry.getValue().equals(clone)) {
+                result.add(entry.getKey());
               }
             }
           }
         }
       }
     }
+
+    return result;
   }
 
   RCUState incRCURead() {

@@ -212,11 +212,7 @@ public class PointerTransferRelation extends SingleEdgeTransferRelation {
       PointerState pPointerState, AExpression pOperand1, AExpression pOperand2)
       throws UnrecognizedCodeException {
 
-    // Maybe recursive call
-    boolean b = equalityTime.isRunning();
-    if (!b) {
-      equalityTime.start();
-    }
+    equalityTime.start();
     try {
       if (pOperand1 instanceof CBinaryExpression) {
         CBinaryExpression op1 = (CBinaryExpression) pOperand1;
@@ -270,9 +266,7 @@ public class PointerTransferRelation extends SingleEdgeTransferRelation {
       }
       return Optional.empty();
     } finally {
-      if (!b) {
-        equalityTime.stop();
-      }
+      equalityTime.stop();
     }
   }
 

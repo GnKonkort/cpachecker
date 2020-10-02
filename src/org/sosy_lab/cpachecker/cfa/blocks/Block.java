@@ -26,11 +26,12 @@ package org.sosy_lab.cpachecker.cfa.blocks;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
 import org.sosy_lab.cpachecker.cfa.model.CFANode;
 import org.sosy_lab.cpachecker.cpa.lock.LockIdentifier;
+import org.sosy_lab.cpachecker.cpa.thread.ThreadState.ThreadStatus;
 import org.sosy_lab.cpachecker.util.states.MemoryLocation;
-
 /**
  * Represents a block as described in the BAM paper.
  */
@@ -44,14 +45,21 @@ public class Block {
   private final ImmutableSet<CFANode> nodes;
   private final ImmutableSet<LockIdentifier> capturedLocks;
   private final Set<MemoryLocation> memoryLocations;
+  //TODO: We are currently assuming, that there is no other operation that can change thread states other that createNewThread! That means, that we should only contain all occurred threads without any additional information.
+  private final Map<String, ThreadStatus> threads;
 
+  // Reassigned at ThreadReducer
+  /*
+   * public enum ThreadStatus { PARENT_THREAD, CREATED_THREAD, SELF_PARALLEL_THREAD; }
+   */
   public Block(
       Iterable<ReferencedVariable> pReferencedVariables,
       Set<CFANode> pCallNodes,
       Set<CFANode> pReturnNodes,
       Iterable<CFANode> allNodes,
       Iterable<LockIdentifier> locks,
-      Iterable<MemoryLocation> locations) {
+      Iterable<MemoryLocation> locations,
+       Map<String, ThreadStatus> pThreads) {
 
     referencedVariables = ImmutableSet.copyOf(pReferencedVariables);
     callNodes = ImmutableSortedSet.copyOf(pCallNodes);
@@ -59,6 +67,7 @@ public class Block {
     nodes = ImmutableSortedSet.copyOf(allNodes);
     capturedLocks = ImmutableSortedSet.copyOf(locks);
     memoryLocations = ImmutableSortedSet.copyOf(locations);
+    threads = pThreads;
   }
 
   public Set<CFANode> getCallNodes() {
@@ -68,6 +77,10 @@ public class Block {
   public CFANode getCallNode() {
     assert callNodes.size() == 1;
     return callNodes.iterator().next();
+  }
+
+  public Map<String, ThreadStatus> getThreads(){
+    return threads;
   }
 
   /** returns a collection of variables used in the block.

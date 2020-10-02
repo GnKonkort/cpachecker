@@ -1236,6 +1236,9 @@ cpa.bam.doPrecisionRefinementForMostInnerBlock = true
 # export blocks
 cpa.bam.exportBlocksPath = "block_cfa.dot"
 
+# export reached set
+cpa.bam.exportReachedSet = true
+
 # If enabled, the reached set cache is analysed for each cache miss to find
 # the cause of the miss.
 cpa.bam.gatherCacheMissStatistics = false
@@ -1604,10 +1607,6 @@ cpa.location.followFunctionCalls = true
 cpa.lock.analysisMode = RACE
   enum:     [RACE, DEADLOCK]
 
-# What are we searching for: race or deadlock
-cpa.lock.analysisMode = RACE
-  enum:     [RACE, DEADLOCK]
-
 #  annotated functions, which are known to works right
 cpa.lock.annotate = no default value
 
@@ -1763,6 +1762,10 @@ cpa.pointer2.noOutput = true
 # name of a file containing information on pointer relations
 cpa.pointer2.precisionFile = "TrackedPointers"
 
+# whether to use the fake locations during analysis (more precise, but also
+# slower)
+cpa.pointer2.useFakeLocs = false
+
 # which merge operator to use for PointerACPA
 cpa.pointerA.merge = "JOIN"
   allowed values: [SEP, JOIN]
@@ -1846,6 +1849,9 @@ cpa.predicate.abstractions.file = "abstractions.txt"
 # 'MIN<=X<=MAX', where MIN and MAX are computed from the type of the method
 # (signature, not name!).
 cpa.predicate.addRangeConstraintsForNondet = false
+
+# apply only if state is not true (relevant)
+cpa.predicate.applyOptimization = true
 
 # Apply only relevant effects.
 cpa.predicate.applyRelevantEffects = false
@@ -2476,20 +2482,10 @@ cpa.propertychecker.className = org.sosy_lab.cpachecker.pcc.propertychecker.Defa
 # empty string represents an empty parameter list.
 cpa.propertychecker.parameters = ""
 
-# Whether to consider constraints on program variables (e.g., x > 10) as
-# definitions)
-cpa.reachdef.constraintIsDef = false
-
 # Name of a function responsible for assignment to RCU pointers
-# Name of a function responsible for assignments to RCU pointers
-# Name of a function responsible for assignment to RCU pointers
-cpa.rcucpa.assign = "ldv_rcu_assign_pointer"
-cpa.rcucpa.assign = "rcu_assign_pointer"
 cpa.rcucpa.assign = "ldv_rcu_assign_pointer"
 
 # Name of a function responsible for dereferences of RCU pointers
-cpa.rcucpa.deref = "ldv_rcu_dereference"
-cpa.rcucpa.deref = "rcu_dereference"
 cpa.rcucpa.deref = "ldv_rcu_dereference"
 
 # Name of a function marking a call to a fictional read lock of RCU pointer
@@ -2505,16 +2501,6 @@ cpa.rcucpa.fictWriteLock = "ldv_wlock_rcu"
 # pointer
 cpa.rcucpa.fictWriteUnlock = "ldv_wunlock_rcu"
 
-# enable analysis flow sensitivity
-cpa.rcucpa.flowSense = false
-
-# Name of a free function
-cpa.rcucpa.free = "ldv_free"
-
-# name of a file containing information on which pointers are RCU pointers
-cpa.rcucpa.precisionFile = "RCUPointers"
-cpa.rcucpa.precisionFile = "rcuPointers"
-
 # Name of a file containing RCU pointers
 cpa.rcucpa.rcuPointersFile = "RCUPointers"
 
@@ -2527,11 +2513,12 @@ cpa.rcucpa.readUnlock = "ldv_rcu_read_unlock"
 # Name of a function responsible for the handling of a grace period
 cpa.rcucpa.sync = "ldv_synchronize_rcu"
 
-# name of a file that holds the Points-To information
-cpa.rcusearch.input = "PointsToMap"
-
 # name of a file to hold information about RCU pointers and their aliases
 cpa.rcusearch.output = "RCUPointers"
+
+# Whether to consider constraints on program variables (e.g., x > 10) as
+# definitions)
+cpa.reachdef.constraintIsDef = false
 
 # which merge operator to use for ReachingDefCPA
 cpa.reachdef.merge = "JOIN"
@@ -2809,9 +2796,6 @@ cpa.thread.skipTheSameThread = false
 # may try to support it with self-parallelizm.
 cpa.thread.supportSelfCreation = false
 
-# Use special case with environment actions
-cpa.thread.withEnvironmentActions = false
-
 # allow assignments of a new thread to the same left-hand-side as an existing
 # thread.
 cpa.threading.allowMultipleLHS = false
@@ -2842,6 +2826,9 @@ cpa.threading.useLocalAccessLocks = true
 # to be found. Use 0 for unlimited refinements (default).
 cpa.threadmodular.refinement.stopAfterNRefinements = 0
 
+# apply projections only if the state is relevant
+cpa.threadmodular.relevanceOptimization = true
+
 # which merge operator to use for UninitializedVariablesCPA?
 cpa.uninitvars.merge = "sep"
   allowed values: [sep, join]
@@ -2862,9 +2849,6 @@ cpa.usage.binderFunctions = {}
 
 # a list of functions, which do not produce notes
 cpa.usage.disableNotesFor = {}
-
-# export counterexample core as text file
-cpa.usage.export.witnessTemplate = "witness.%s.graphml"
 
 # export counterexample core as text file
 cpa.usage.export.witnessTemplate = "witness.%s.graphml"
@@ -2961,13 +2945,6 @@ cpa.usage.unsafedetector.unsafeMode = RACE
 
 # functions, which are marked as write access
 cpa.usage.writeAccessFunctions = {}
-
-# A name of interrupt lock for checking deadlock free
-cpa.usage.unsafedetector.intLock = no default value
-
-# defines what is unsafe
-cpa.usage.unsafedetector.unsafeMode = RACE
-  enum:     [RACE, DEADLOCKCIRCULAR, DEADLOCKDISPATCH]
 
 # which merge operator to use for ValidVarsCPA
 cpa.validVars.merge = "JOIN"
@@ -4108,6 +4085,9 @@ undefinedFunctionsCollector.stubsFile = "stubs.c"
 
 # Should we process the same blocks with covered sets of locks
 usage.processCoveredUsages = true
+
+# use sound regions as identifiers
+usage.useSoundRegions = false
 
 # File for exporting the witness automaton in DOT format.
 witness.automatonDumpFile = no default value

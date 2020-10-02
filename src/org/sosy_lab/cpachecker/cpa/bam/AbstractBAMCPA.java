@@ -56,6 +56,8 @@ import org.sosy_lab.cpachecker.cpa.lock.LockCPA;
 import org.sosy_lab.cpachecker.cpa.lock.LockTransferRelation;
 import org.sosy_lab.cpachecker.cpa.pointer2.PointerCPA;
 import org.sosy_lab.cpachecker.cpa.pointer2.PointerTransferRelation;
+import org.sosy_lab.cpachecker.cpa.thread.ThreadCPA;
+import org.sosy_lab.cpachecker.cpa.thread.ThreadTransferRelation;
 import org.sosy_lab.cpachecker.exceptions.CPAException;
 
 @Options(prefix = "cpa.bam")
@@ -153,10 +155,12 @@ public abstract class AbstractBAMCPA extends AbstractSingleWrapperCPA {
 
     LockCPA cpa = retrieveWrappedCpa(LockCPA.class);
     PointerCPA pcpa = retrieveWrappedCpa(PointerCPA.class);
+    ThreadCPA thcpa = retrieveWrappedCpa(ThreadCPA.class);
     final BlockPartitioningBuilder blockBuilder =
         new BlockPartitioningBuilder(
             cpa == null ? null : (LockTransferRelation) cpa.getTransferRelation(),
-            pcpa == null ? null : (PointerTransferRelation) pcpa.getTransferRelation());
+            pcpa == null ? null : (PointerTransferRelation) pcpa.getTransferRelation(),
+            thcpa == null ? null : (ThreadTransferRelation) thcpa.getTransferRelation());
     PartitioningHeuristic heuristic = blockHeuristic.create(logger, pCfa, pConfig);
     BlockPartitioning partitioning = heuristic.buildPartitioning(blockBuilder);
     if (exportBlocksPath != null) {

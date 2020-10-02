@@ -248,9 +248,8 @@ public class RCUSearchTransfer extends SingleEdgeTransferRelation {
       CFunctionCallExpression funcExpr = pStatement.getFunctionCallExpression();
 
       logger.log(Level.ALL, "FUNC NAME EXPR: " + funcExpr.getFunctionNameExpression());
-      CFunctionDeclaration decl = funcExpr.getDeclaration();
 
-      if (decl != null && decl.getName().contains(deref)) {
+      if (funcExpr.getDeclaration().getName().contains(deref)) {
         CExpression rcuPtr = funcExpr.getParameterExpressions().get(0);
         PointerState pointerState = (PointerState) state.getWrappedState();
 
